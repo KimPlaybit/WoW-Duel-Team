@@ -1,0 +1,19 @@
+## Interface: 16001
+## Title: Team Duel
+## Notes: Organized 1v1, 2v2 and 3v3 team duels with local ratings.
+## Author: KimPe
+## Version: 0.1.0
+## SavedVariables: TeamDuelDB
+
+Core.lua
+Util.lua
+Config.lua
+Protocol.lua
+Rating.lua
+Match.lua
+DuelResult.lua
+DB.lua
+Comm.lua
+Session.lua
+UI.lua
+Init.lua

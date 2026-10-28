@@ -53,7 +53,7 @@ read_globals = {
 	"GetInstanceInfo", "IsInInstance",
 
 	-- UI
-	"UIParent", "GameTooltip", "GameFontNormal", "GameFontHighlight", "GameFontNormalLarge",
+	"UIParent", "UISpecialFrames", "GameTooltip", "GameFontNormal", "GameFontHighlight", "GameFontNormalLarge",
 	"StaticPopup_Show", "StaticPopup_Hide", "PlaySound", "SOUNDKIT",
 	"DEFAULT_CHAT_FRAME", "UIErrorsFrame", "RaidNotice_AddMessage", "Settings",
 	"NORMAL_FONT_COLOR", "RED_FONT_COLOR", "GREEN_FONT_COLOR", "RAID_CLASS_COLORS", "WrapTextInColorCode",
@@ -63,4 +63,4 @@ read_globals = {
 }
 
 -- Pure-Lua unit tests run under LuaJIT, outside the game.
-files["tests/"] = { std = "lua51", globals = { "describe", "it", "expect", "LoadAddonFile" } }
+files["tests/"] = { std = "lua51", globals = { "describe", "it", "expect", "LoadAddonFile", "LoadPure" } }

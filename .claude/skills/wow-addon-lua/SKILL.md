@@ -104,6 +104,10 @@ automated path is only an optimization that falls back to that button (info rule
   - Tests: LuaJIT (Lua 5.1 semantics, the same as the game) is installed per-user and on the user PATH
     (`%LOCALAPPDATA%\Programs\LuaJIT\bin\luajit.exe`). `luajit tests/run.lua` is a zero-dependency runner
     (`describe`/`it`/`expect`, `LoadAddonFile(path, ns)`). **Register each new `*_spec.lua` in its `SPECS` list.**
+  - **Integration simulator** `tests/sim.lua`: several fake clients each load the real TOC files, with
+    whispers, timers, slash commands, button clicks and duel system messages simulated (`tests/flow_spec.lua`).
+    Use it for any change to Session/Comm/UI. It encodes our *expected* Forever behavior, so passing proves the logic
+    is coherent, not that the game agrees. When a module is added to the TOC, add it to the `TOC` list in sim.lua too.
   - LuaJIT ≈ 5.1 but not identical to the WoW client: it is missing WoW's Lua extensions (`strsplit`, `wipe`, `bit`, …).
     Pure modules must not use them, or the spec has to stub them.
 - Confirm the interface number in game: `/dump select(4, GetBuildInfo())`. Update the TOCs if the client patched.

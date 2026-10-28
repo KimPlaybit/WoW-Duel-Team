@@ -2,6 +2,22 @@
 
 Tracks the open decisions from spec §12. Newest first. "Provisional" means it can still change.
 
+## 2026-10-28: Provisional defaults used by the milestone-1 implementation
+
+These are placeholders so the code can run. All of them live in `src/TeamDuel/Config.lua` and can change.
+
+| Open decision (spec §12) | Provisional choice | Why |
+|---|---|---|
+| #1 Progression | `pairs`: fighter i vs fighter i, each fights once, majority wins, early finish once decided. `winnerStays` (elimination) is implemented too, chosen per challenge. | Matches §3.1's "max duels = team size". |
+| — Tie in 2v2 `pairs` (1–1) | Draw (0.5 score for rating) | Simplest rule that is fair to both teams. |
+| #2 HP/resources carry over | Not controlled. The addon can't heal or reset; WoW ends a duel at low HP. | Not technically controllable. |
+| #3 Rating algorithm | Elo on team averages, K=32, start 1500, per format; same delta for every team member | Common default. |
+| #6 Identity | `Name-Realm` | Stable and readable. GUID stability is unverified on Forever. |
+| #8 Duel automation | Request from a button click; accept is always the player clicking Blizzard's popup | `StartDuel`/`AcceptDuel` protection is unverified. |
+| #9 Disconnects | No auto-forfeit. Unresponsive peers pause the match; a leader can `/td abort`, and anyone can `/td abandon` locally. | Spec §11.4: never silently decide. |
+| #10 Rating storage | Local SavedVariables only (milestone 1, spec §13) | Already decided in the spec. |
+| — Result trust | A duel counts only when both fighters report the same winner (auto from the system message, or manual buttons). Two disputes on one duel abort the match. | §11.2, §11.4 |
+
 ## 2026-10-28: Candidate duel locations (spec §12 #7; provisional, final spot not picked)
 
 Feasibility testing and early development use these four spots. The final designated location is still open.

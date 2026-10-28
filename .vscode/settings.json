@@ -17,6 +17,9 @@
     "package": "disable",
     "utf8": "disable"
   },
+  "Lua.diagnostics.severity": {
+    "param-type-mismatch": "Hint"
+  },
   "Lua.diagnostics.globals": [
     "TeamDuelDB",
     "SLASH_TEAMDUEL1",

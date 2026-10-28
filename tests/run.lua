@@ -47,7 +47,15 @@ end
 -- Specs are listed explicitly: plain Lua 5.1 can't list a directory without LuaFileSystem.
 local SPECS = {
 	"tests/runner_spec.lua",
+	"tests/protocol_spec.lua",
+	"tests/rating_spec.lua",
+	"tests/match_spec.lua",
+	"tests/duelresult_spec.lua",
+	"tests/db_spec.lua",
+	"tests/flow_spec.lua", -- last: installs fake WoW globals
 }
+
+dofile("tests/helpers.lua")
 
 for _, spec in ipairs(SPECS) do dofile(spec) end
 print(("%d passed, %d failed"):format(passed, failed))
