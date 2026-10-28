@@ -1,0 +1,38 @@
+{
+  "Lua.runtime.version": "Lua 5.1",
+  "Lua.workspace.library": [
+    ".ref/WoW-Addons/types",
+    "types"
+  ],
+  "Lua.workspace.checkThirdParty": false,
+  "Lua.workspace.ignoreDir": [
+    ".vscode",
+    ".ref",
+    ".tools",
+    "docs"
+  ],
+  "Lua.runtime.builtin": {
+    "debug": "disable",
+    "io": "disable",
+    "package": "disable",
+    "utf8": "disable"
+  },
+  "Lua.diagnostics.globals": [
+    "TeamDuelDB",
+    "SLASH_TEAMDUEL1",
+    "SLASH_TEAMDUEL2",
+    "DuelProbeDB",
+    "SLASH_DUELPROBE1",
+    "SlashCmdList",
+    "StaticPopupDialogs",
+    "describe",
+    "it",
+    "expect",
+    "LoadAddonFile"
+  ],
+  "files.eol": "\n",
+  "[lua]": {
+    "editor.insertSpaces": false,
+    "editor.tabSize": 4
+  }
+}
