@@ -10,7 +10,7 @@ Dump checked: build 70170, Interface 16001, 2026-10-28.
 | API | Source | Known facts | Feasibility | In-game test needed |
 |---|---|---|---|---|
 | `StartDuel(unit)` / `StartDuel(name, exact)` | G, W | Exists. Signature from the wiki only. Protection status unknown. | Unverified | Call it from a slash command (hardware event) and from `C_Timer.After` (no hardware event). Watch `ADDON_ACTION_BLOCKED/FORBIDDEN`. Test at range and out of range. |
-| `AcceptDuel()` | G | Exists. Protection status unknown. | Unverified | Call it from a `DUEL_REQUESTED` handler (no hardware event). If blocked, the player has to click Accept themselves. |
+| `AcceptDuel()` | G | Exists. Protection status unknown. Called from the challenge popup's Accept click. | Unverified | Call it from a `DUEL_REQUESTED` handler (no hardware event). If blocked, the player has to click Accept themselves. |
 | `CancelDuel()` / `ForfeitDuel()` | G | Exist. | Unverified | Check the behavior before and after the countdown. |
 | `DUEL_REQUESTED(playerName)` | D | Payload: the challenger's name. | Verified (exists) | Check the name format, for example whether a realm suffix is included. |
 | `DUEL_TO_THE_DEATH_REQUESTED(playerName)` | D | Exists. Reject or ignore it. | Verified (exists) | — |
@@ -35,7 +35,9 @@ Dump checked: build 70170, Interface 16001, 2026-10-28.
 | `C_Map.GetBestMapForUnit(unit)` / `C_Map.GetPlayerMapPosition(mapID, unit)` | D | "Only works for the player and party members." Returns a normalized vector2. | Partially | Use it for location validation, not for distance. |
 | `GetRealZoneText` / `GetSubZoneText` / `GetMinimapZoneText` / `GetZoneText` | D | Zone strings are localized, so compare them using the uiMapID where possible. | Verified (exists) | Read them at the designated spot. |
 | `GetInstanceInfo()` / `IsInInstance()` | D | Use these to reject instanced locations. | Verified (exists) | — |
-| `CheckInteractDistance(unit, idx)` / `UnitInRange(unit)` | D | Coarse range booleans. `UnitInRange` is for group members only. | Partially | Usable as a "close enough to duel" fallback signal. |
+| `StaticPopup_Show` / `StaticPopup_FindVisible` / `hooksecurefunc` | G | Exist (undocumented). Used to add challenge details to Blizzard's `DUEL_REQUESTED` popup and post-hook `AcceptDuel`/`CancelDuel`. Dialog text region (`GetTextFontString` / `.Text`) unverified. | Unverified | Fallback: `/td accept`/`decline` window. |
+| `Menu.ModifyMenu(tag, fn)` / `MenuUtil` | FrameXML | Adds "Challenge" to `MENU_UNIT_*` right-click menus. Not in the dump (it lists only `C_*` tables); `UnitPopup_OpenMenu` is, so the 11.x menu system is likely present. | Unverified | Fallback: `/td challenge`. |
+| `CheckInteractDistance(unit, idx)` / `UnitInRange(unit)` | D | Coarse range booleans. `UnitInRange` is for group members only. | Partially | Gates challenges: `CheckInteractDistance("target", 3)` must be true (duel range). Index 3 and in-combat behavior UNVERIFIED. |
 | `ZONE_CHANGED`, `ZONE_CHANGED_NEW_AREA`, `ZONE_CHANGED_INDOORS` | D | Exist. | Verified (exists) | — |
 
 ## Units, identity, group

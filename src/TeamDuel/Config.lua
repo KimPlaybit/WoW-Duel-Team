@@ -21,6 +21,13 @@ ns.Config = {
 	MAX_DISPUTES_PER_DUEL = 2,
 
 	CHALLENGE_TTL = 120,            -- seconds a challenge stays open
+
+	-- The challenger must be within normal duel range of the targeted opposing leader.
+	-- CheckInteractDistance index 3 is duel range on Retail/Classic; UNVERIFIED on Forever.
+	DUEL_RANGE_INDEX = 3,
+	-- PROVISIONAL: when the range can't be read (API errors or returns a secret), "allow" sends the
+	-- challenge with a warning; "block" refuses it.
+	DUEL_RANGE_UNKNOWN = "allow",
 	HISTORY_LIMIT = 500,            -- stored matches
 	LOG_LIMIT = 500,                -- debug log lines
 

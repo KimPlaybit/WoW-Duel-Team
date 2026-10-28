@@ -18,6 +18,8 @@ local S = {
 	challengeIn = nil,   -- { mid, from, fmt, pg, a, ra, expires }
 	teamChallenge = nil, -- our leader challenged someone: { opp?, fmt }
 	match = nil,
+	duelFrom = nil,      -- who the pending Blizzard duel request is from, as the game gave the name
+	duelFlagFor = nil,   -- mid whose first duel was already requested/accepted with the challenge
 	lastSummary = nil,   -- record of the last finished/aborted match
 	reported = {},       -- ["duel:attempt"] = true, results this client already sent
 	awaitingManual = false,
@@ -144,6 +146,8 @@ function Session.SetOrder(inputs)
 	local order = {}
 	for i, input in ipairs(inputs) do order[i] = ns.Canonical(input) end
 	if #order ~= #team.members then return ns.Print("List every team member exactly once.") end
+	-- The leader always fights first: the challenge's duel flag is the match's first duel.
+	if order[1] ~= ns.Me() then return ns.Print("You are the leader, so you always fight first. List the others after you.") end
 	for _, name in ipairs(order) do
 		if not Util.IndexOf(team.members, name) then return ns.Print(tostring(name) .. " is not on your team.") end
 	end
@@ -159,30 +163,96 @@ end
 -- Challenges
 ---------------------------------------------------------------------------
 
-function Session.Challenge(input)
-	local opp = ns.Canonical(input)
-	if not opp or opp == ns.Me() then return ns.Print("Usage: /td challenge <opposing team leader>") end
-	if S.match then return ns.Print("A match is already running.") end
+-- Our side of a fmt-sized match. 1v1 is always just us, whatever team we're on; 2v2/3v3 need us to
+-- lead a team of exactly that size. Returns members, ratings, or nil and a reason code
+-- ("notleader", "size<n>") that also travels in DEC.
+local function OwnRoster(fmt)
+	if fmt == 1 then return { ns.Me() }, { DB.GetRating(ns.db, ns.Me(), 1) } end
 	local team = LeaderTeam()
-	if not team then return ns.Print("Only your team leader can send challenges.") end
-	if Util.IndexOf(team.members, opp) then return ns.Print("You can't challenge your own teammate.") end
+	if not team then return nil, "notleader" end
+	if #team.members ~= fmt then return nil, "size" .. #team.members end
+	return Util.Copy(team.members), RatingsFor(team, fmt)
+end
+
+local function Format(fmt)
+	return ("%dv%d"):format(fmt, fmt)
+end
+
+-- Why our own roster can't take a fmt challenge, for our own chat.
+local function OwnRosterProblem(reason, fmt)
+	if reason == "notleader" then return "Only your team leader can take on a " .. Format(fmt) .. "." end
+	local n = tonumber(string.match(reason, "^size(%d)$"))
+	if n then
+		return ("Your team has %d player(s); a %s needs %d. Invite teammates with /td invite <name>."):format(n, Format(fmt), fmt)
+	end
+	return reason
+end
+
+-- Full name of a unit, or nil if it doesn't exist or is unreadable.
+local function UnitFullNameOf(unit)
+	if not UnitExists(unit) then return nil end
+	local name, realm = UnitName(unit)
+	if not Util.IsReadable(name) then return nil end
+	return Util.FullName(name, (Util.IsReadable(realm) and realm ~= "" and realm) or ns.MyRealm())
+end
+
+-- true/false, or nil when the client can't tell (API missing, errored or secret).
+-- CheckInteractDistance's duel index is UNVERIFIED on Forever (see docs/verification-log.md).
+local function InDuelRange(unit)
+	local ok, inRange = pcall(CheckInteractDistance, unit, ns.Config.DUEL_RANGE_INDEX)
+	if not ok then ns.Log("warn", "CheckInteractDistance failed:", inRange) end
+	if not ok or not Util.IsReadable(inRange) or type(inRange) ~= "boolean" then return nil end
+	return inRange
+end
+
+-- Challenges need the challenger within normal duel range of the opponent (the opposing leader for 2v2/3v3).
+-- input: a name (slash command, chat-name menu) or nil; unit: the unit token from the right-click menu, if any;
+-- fmt: 1-3, default our team size. Without a usable unit token the range can only be checked on the target.
+function Session.Challenge(input, unit, fmt)
+	local opp = input and ns.Canonical(input) or UnitFullNameOf(unit or "target")
+	if not opp or opp == ns.Me() then return ns.Print("Right-click the opposing team leader and choose Challenge.") end
+	if not unit or UnitFullNameOf(unit) ~= opp then
+		unit = UnitFullNameOf("target") == opp and "target" or nil
+	end
+	if not unit then return ns.Print("Target " .. Short(opp) .. " to challenge them.") end
+	local inRange = InDuelRange(unit)
+	if inRange == false then return ns.Print("Too far away. Get within duel range of " .. Short(opp) .. ".") end
+	if inRange == nil then
+		ns.Log("warn", "duel range unknown, policy", ns.Config.DUEL_RANGE_UNKNOWN)
+		if ns.Config.DUEL_RANGE_UNKNOWN ~= "allow" then
+			return ns.Print("Could not check the distance to " .. Short(opp) .. ". Try again.")
+		end
+		ns.Print("Could not check the distance to " .. Short(opp) .. "; sending anyway.")
+	end
+	if S.match then return ns.Print("A match is already running.") end
+	fmt = fmt or (Session.TeamMembers() and #Session.TeamMembers()) or 1
+	local members, ratings = OwnRoster(fmt)
+	if not members then return ns.Print(OwnRosterProblem(ratings, fmt)) end
+	if Util.IndexOf(members, opp) then return ns.Print("You can't challenge your own teammate.") end
 	if IsInInstance() then
 		ns.Print("Warning: you are in an instance. Duels need an open-world spot (/td locations).")
 	end
-	local fmt = #team.members
 	local mid = GetServerTime() .. ":" .. math.random(100000, 999999)
 	local c = {
 		mid = mid, opp = opp, fmt = fmt, pg = ns.Config.PROGRESSION,
-		a = Util.Copy(team.members), ra = RatingsFor(team, fmt),
+		a = members, ra = ratings,
 		expires = GetServerTime() + ns.Config.CHALLENGE_TTL,
 	}
 	local fields = { fmt = c.fmt, pg = c.pg, a = c.a, ra = c.ra, exp = c.expires }
 	if not ns.Comm.Send(opp, "CHAL", mid, fields) then
 		return ns.Print("Could not send the challenge (see /td log).")
 	end
-	ns.Comm.SendToAll(team.members, "CHAL", mid, fields)
+	ns.Comm.SendToAll(members, "CHAL", mid, fields)
 	S.challengeOut = c
-	ns.Print(("Challenged %s to a %dv%d."):format(Short(opp), fmt, fmt))
+	ns.Print(("Challenged %s to a %s."):format(Short(opp), Format(fmt)))
+	-- The challenge is also the duel request for the first duel (leader vs leader). We are inside the
+	-- click/slash handler here, so this has its hardware event; protection on Forever is UNVERIFIED.
+	local ok, err = pcall(StartDuel, unit)
+	c.flagged = ok
+	if not ok then
+		ns.Log("error", "StartDuel on challenge failed:", err)
+		ns.Print("Could not send the duel request. Once the match starts, use 'Start duel'.")
+	end
 	Refresh()
 end
 
@@ -197,15 +267,44 @@ local function StartMatch(mid, f, leaderB)
 		ns.Log("error", "match rejected:", m)
 		return
 	end
+	local out = S.challengeOut
+	if (out and out.mid == mid and out.flagged) or S.duelFlagFor == mid then S.duelFlagFor = mid end
 	S.match = m
 	S.challengeOut, S.challengeIn, S.teamChallenge, S.lastSummary = nil, nil, nil, nil
 	S.reported, S.awaitingManual = {}, false
 	ns.Print(("Match started: %dv%d, %s."):format(m.fmt, m.fmt, m.progression == "pairs" and "each fighter once" or "winner stays"))
+	local side = Match.TeamOf(m, ns.Me())
+	if side then
+		local win, loss, draw = Session.RatingStakes(side == "A" and m.ratingsA or m.ratingsB,
+			side == "A" and m.ratingsB or m.ratingsA, m.fmt, m.progression)
+		ns.Print("Rating at stake: " .. Session.FormatStakes(win, loss, draw))
+	end
 	Open()
 	Session.AnnounceDuel()
 end
 
-function Session.Accept()
+-- Rating points our team gets for a win, a loss, and (2v2 pairs only) a draw.
+function Session.RatingStakes(mine, theirs, fmt, progression)
+	local avgMine, avgTheirs, k = Rating.TeamAverage(mine), Rating.TeamAverage(theirs), ns.Config.RATING_K
+	local win = Rating.MatchDeltas(avgMine, avgTheirs, 1, k)
+	local loss = Rating.MatchDeltas(avgMine, avgTheirs, 0, k)
+	local draw = (fmt == 2 and progression == "pairs") and Rating.MatchDeltas(avgMine, avgTheirs, 0.5, k) or nil
+	return win, loss, draw
+end
+
+function Session.FormatStakes(win, loss, draw)
+	local function Signed(n) return (n >= 0 and "+" or "") .. n end
+	local text = ("win %s, loss %s"):format(Signed(win), Signed(loss))
+	return draw and (text .. ", draw " .. Signed(draw)) or text
+end
+
+-- True if the pending Blizzard duel request comes from `name` (a full name).
+local function DuelIsFrom(name)
+	return S.duelFrom ~= nil and DuelResult.ResolveFighter(S.duelFrom, name, ns.Me()) == name
+end
+
+-- viaDuel: called from the AcceptDuel hook, i.e. the player already accepted Blizzard's duel popup.
+function Session.Accept(viaDuel)
 	local c = S.challengeIn
 	if not c then return ns.Print("No pending challenge.") end
 	if c.expires < GetServerTime() then
@@ -213,29 +312,46 @@ function Session.Accept()
 		Refresh()
 		return ns.Print("That challenge has expired.")
 	end
-	local team = LeaderTeam()
-	if not team then return ns.Print("Only your team leader can accept challenges.") end
-	if #team.members ~= c.fmt then
-		return ns.Print(("This is a %dv%d challenge but your team has %d player(s)."):format(c.fmt, c.fmt, #team.members))
-	end
-	for _, name in ipairs(team.members) do
+	local members, ratings = OwnRoster(c.fmt)
+	if not members then return ns.Print(OwnRosterProblem(ratings, c.fmt)) end
+	for _, name in ipairs(members) do
 		if Util.IndexOf(c.a, name) then return ns.Print(Short(name) .. " is on both teams.") end
 	end
 	local fields = {
 		fmt = c.fmt, pg = c.pg, a = c.a, ra = c.ra,
-		b = Util.Copy(team.members), rb = RatingsFor(team, c.fmt),
+		b = members, rb = ratings,
 		li = Util.IndexOf(c.a, c.from),
 	}
+	local acceptDuel = not viaDuel and DuelIsFrom(c.from)
+	if viaDuel or acceptDuel then S.duelFlagFor = c.mid end
+	S.duelFrom = nil
 	ns.Comm.SendToAll(c.a, "ACC", c.mid, fields)
 	ns.Comm.SendToAll(fields.b, "ACC", c.mid, fields)
-	StartMatch(c.mid, fields, ns.Me())
+	StartMatch(c.mid, fields, ns.Me()) -- clears challengeIn, so the AcceptDuel hook below does nothing
+	-- Accepted from /td instead of the duel popup: accept the duel too (the first duel is leader vs leader).
+	-- Runs from a click; AcceptDuel's protection on Forever is UNVERIFIED, Blizzard's popup is the fallback.
+	if acceptDuel then
+		local ok, err = pcall(AcceptDuel)
+		if not ok then
+			ns.Log("error", "AcceptDuel failed:", err)
+			ns.Print("Could not accept the duel automatically. Click Accept on the duel request.")
+		end
+	elseif not viaDuel then
+		ns.Print("No duel request from " .. Short(c.from) .. " yet. Accept it when it appears, or use 'Start duel'.")
+	end
 end
 
-function Session.Decline()
+-- viaDuel: called from the CancelDuel hook, i.e. the player declined Blizzard's duel popup.
+function Session.Decline(viaDuel)
 	local c = S.challengeIn
 	if not c then return ns.Print("No pending challenge.") end
+	S.challengeIn = nil -- first, so the CancelDuel hook below does nothing
 	ns.Comm.Send(c.from, "DEC", c.mid, { why = "declined" })
-	S.challengeIn = nil
+	if not viaDuel and DuelIsFrom(c.from) then
+		local ok, err = pcall(CancelDuel)
+		if not ok then ns.Log("warn", "CancelDuel failed:", err) end
+	end
+	S.duelFrom = nil
 	ns.Print("Challenge declined.")
 	Refresh()
 end
@@ -261,7 +377,9 @@ function Session.AnnounceDuel()
 	local duel, idx = Match.CurrentDuel(m)
 	ns.Print(("Duel %d: %s vs %s."):format(idx, Short(duel.a), Short(duel.b)))
 	local _, _, opp = Session.MyDuel()
-	if opp then
+	if opp and idx == 1 and S.duelFlagFor == m.mid then
+		ns.Print("You are up! The duel with " .. Short(opp) .. " was requested with the challenge. If it doesn't start, click 'Start duel'.")
+	elseif opp then
 		ns.Print("You are up! Get in range of " .. Short(opp) .. " and click 'Start duel', or accept their request.")
 		Ding()
 	end
@@ -272,14 +390,7 @@ end
 function Session.StartDuel()
 	local _, _, opp = Session.MyDuel()
 	if not opp then return ns.Print("You are not in the current duel.") end
-	local unit = Short(opp)
-	if UnitExists("target") then
-		local name, realm = UnitName("target")
-		if Util.IsReadable(name) then
-			local targetName = Util.FullName(name, (Util.IsReadable(realm) and realm ~= "" and realm) or ns.MyRealm())
-			if targetName == opp then unit = "target" end
-		end
-	end
+	local unit = UnitFullNameOf("target") == opp and "target" or Short(opp)
 	local ok, err = pcall(StartDuel, unit)
 	if not ok then
 		ns.Log("error", "StartDuel failed:", err)
@@ -448,7 +559,7 @@ end
 
 function Handlers.CHAL(from, msg)
 	local f = msg.fields
-	if not Util.IndexOf(f.a, from) then return ns.Log("warn", "CHAL sender not on challenging team", from) end
+	if f.a[1] ~= from then return ns.Log("warn", "CHAL sender is not the challenging team's first fighter", from) end
 	if f.exp < GetServerTime() then return end
 	if Util.IndexOf(f.a, ns.Me()) then
 		S.teamChallenge = { fmt = f.fmt }
@@ -459,16 +570,25 @@ function Handlers.CHAL(from, msg)
 		ns.Comm.Send(from, "DEC", msg.mid, { why = "busy" })
 		return
 	end
+	-- 2v2/3v3 must reach a leader with a full team; say why otherwise so the challenger isn't left waiting.
+	local members, reason = OwnRoster(f.fmt)
+	if not members then
+		ns.Comm.Send(from, "DEC", msg.mid, { why = reason })
+		ns.Print(("%s challenged you to a %s, but it can't go ahead: %s"):format(Short(from), Format(f.fmt), OwnRosterProblem(reason, f.fmt)))
+		return
+	end
 	S.challengeIn = { mid = msg.mid, from = from, fmt = f.fmt, pg = f.pg, a = f.a, ra = f.ra, expires = f.exp }
-	ns.Print(("%s's team challenges you to a %dv%d. Open /td to accept or decline."):format(Short(from), f.fmt, f.fmt))
+	ns.Print(("%s challenges you to a %s. Accepting their duel request starts the match (or use /td)."):format(Short(from), Format(f.fmt)))
 	Ding()
-	Open()
+	-- The duel request may already be up; otherwise the StaticPopup_Show hook adds the details when it opens.
+	if DuelIsFrom(from) and not ns.UI.DecorateDuelPopup(S.challengeIn) then Open() end
+	Refresh()
 end
 
 function Handlers.ACC(from, msg)
 	local f = msg.fields
 	local me = ns.Me()
-	if not Util.IndexOf(f.b, from) then return ns.Log("warn", "ACC sender not on accepting team", from) end
+	if f.b[1] ~= from then return ns.Log("warn", "ACC sender is not the accepting team's first fighter", from) end
 	if not (Util.IndexOf(f.a, me) or Util.IndexOf(f.b, me)) then return end
 	if S.match then return ns.Log("warn", "ACC while in a match", msg.mid) end
 	local out = S.challengeOut
@@ -485,7 +605,22 @@ function Handlers.DEC(from, msg)
 	local out = S.challengeOut
 	if out and out.mid == msg.mid and out.opp == from then
 		S.challengeOut = nil
-		ns.Print(Short(from) .. " declined (" .. msg.fields.why .. ").")
+		if out.flagged then
+			local ok, err = pcall(CancelDuel) -- withdraw our duel request; no hardware event here
+			if not ok then ns.Log("warn", "CancelDuel failed:", err) end
+		end
+		local why, opp, fmt = msg.fields.why, Short(from), Format(out.fmt)
+		local n = tonumber(string.match(why, "^size(%d)$"))
+		if why == "notleader" then
+			ns.Print(("Challenge failed: %s is not a team leader, so they can't take a %s. Challenge their leader."):format(opp, fmt))
+		elseif n then
+			ns.Print(("Challenge failed: %s's team has %d player(s); a %s needs %d."):format(opp, n, fmt, out.fmt))
+		elseif why == "busy" then
+			ns.Print(("Challenge failed: %s is already in a match."):format(opp))
+		else
+			ns.Print(opp .. " declined (" .. why .. ").")
+		end
+		Refresh()
 	end
 end
 
@@ -515,9 +650,19 @@ end
 -- Game events
 ---------------------------------------------------------------------------
 
+-- A challenge's duel request gets the challenge details under Blizzard's popup.
+local function ShowChallengeOnDuelPopup()
+	local c = S.challengeIn
+	if c and DuelIsFrom(c.from) and not ns.UI.DecorateDuelPopup(c) then Open() end
+end
+
 local function OnDuelRequested(playerName)
+	if not Util.IsReadable(playerName) then return end
+	S.duelFrom = playerName
+	local c = S.challengeIn
+	if c and DuelIsFrom(c.from) then return ShowChallengeOnDuelPopup() end
 	local _, _, opp = Session.MyDuel()
-	if not opp or not Util.IsReadable(playerName) then return end
+	if not opp then return end
 	if DuelResult.ResolveFighter(playerName, opp, ns.Me()) == opp then
 		ns.Print("Accept the duel request from " .. Short(opp) .. ", your scheduled opponent.")
 	else
@@ -572,6 +717,28 @@ function Session.Init()
 	ns.On("DUEL_REQUESTED", OnDuelRequested)
 	ns.On("CHAT_MSG_SYSTEM", OnSystemMessage)
 	ns.On("DUEL_FINISHED", OnDuelFinished)
+	ns.On("DUEL_FINISHED", function() S.duelFrom = nil end)
+	-- Blizzard's duel popup: add the challenge details when it opens, and let its Accept/Decline (which call
+	-- AcceptDuel/CancelDuel) accept or decline the challenge from the same player. Post-hooks only, so the
+	-- popup's own secure calls are untouched. UNVERIFIED on Forever; /td accept|decline are the fallback.
+	local function Hook(name, fn)
+		if not hooksecurefunc then return end
+		local ok, err = pcall(hooksecurefunc, name, function(...)
+			local okFn, errFn = pcall(fn, ...)
+			if not okFn then ns.Log("error", "hook", name, errFn) end
+		end)
+		if not ok then ns.Log("warn", "could not hook", name, err) end
+	end
+	local function ChallengeDuelPending()
+		return S.challengeIn ~= nil and DuelIsFrom(S.challengeIn.from)
+	end
+	Hook("StaticPopup_Show", function(which, name)
+		if which ~= "DUEL_REQUESTED" then return end
+		if Util.IsReadable(name) and type(name) == "string" then S.duelFrom = name end
+		ShowChallengeOnDuelPopup()
+	end)
+	Hook("AcceptDuel", function() if ChallengeDuelPending() then Session.Accept(true) end end)
+	Hook("CancelDuel", function() if ChallengeDuelPending() then Session.Decline(true) end end)
 	ns.On("ADDON_ACTION_BLOCKED", function(addon, func)
 		if addon == ns.name then ns.Log("error", "action blocked:", func) end
 	end)

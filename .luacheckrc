@@ -54,12 +54,14 @@ read_globals = {
 
 	-- UI
 	"UIParent", "UISpecialFrames", "GameTooltip", "GameFontNormal", "GameFontHighlight", "GameFontNormalLarge",
-	"StaticPopup_Show", "StaticPopup_Hide", "PlaySound", "SOUNDKIT",
+	"StaticPopup_Show", "StaticPopup_Hide", "StaticPopup_FindVisible", "StaticPopup_ResizeShownDialogs",
+	"PlaySound", "SOUNDKIT",
 	"DEFAULT_CHAT_FRAME", "UIErrorsFrame", "RaidNotice_AddMessage", "Settings",
+	"Menu", "MenuUtil", -- FrameXML right-click menus; UNVERIFIED on Forever
 	"NORMAL_FONT_COLOR", "RED_FONT_COLOR", "GREEN_FONT_COLOR", "RAID_CLASS_COLORS", "WrapTextInColorCode",
 
 	-- Global strings (UNVERIFIED on Forever: /dump them in game)
-	"DUEL_WINNER_KNOCKOUT", "DUEL_WINNER_RETREAT",
+	"DUEL_WINNER_KNOCKOUT", "DUEL_WINNER_RETREAT", "DUEL",
 }
 
 -- Pure-Lua unit tests run under LuaJIT, outside the game.

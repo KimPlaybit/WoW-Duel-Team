@@ -70,23 +70,43 @@ local function TeamLines(lines, S)
 	lines[#lines + 1] = ("Your team, %dv%d, fighter order: %s"):format(#members, #members, table.concat(parts, ", "))
 end
 
-local function ChallengeLines(lines, c)
-	local avg = Rating.TeamAverage(c.ra)
-	lines[#lines + 1] = Gold(("Challenge from %s's team: %dv%d"):format(Short(c.from), c.fmt, c.fmt))
-		.. (c.pg == "pairs" and " (each fighter once)" or " (winner stays)")
-	lines[#lines + 1] = ("Team average %d, spread %d"):format(Util.Round(avg), Rating.Spread(c.ra))
-	for i, name in ipairs(c.a) do
-		lines[#lines + 1] = ("   %d. %s  %d"):format(i, name, c.ra[i])
+-- Spec §4.1 / §10.1: who, format, team average, every player's rating, restrictions, location.
+-- Shared by the window and the challenge popup (which has its own timer, so no expiry line).
+local function ChallengeLines(lines, c, forPopup)
+	local fmt = ("%dv%d"):format(c.fmt, c.fmt)
+	if c.fmt == 1 then
+		lines[#lines + 1] = Gold(("%s challenges you to a %s duel."):format(Short(c.from), fmt))
+		lines[#lines + 1] = ("Rating: %d"):format(c.ra[1])
+	else
+		lines[#lines + 1] = Gold(("%s's team challenges you to a %s"):format(Short(c.from), fmt))
+			.. (c.pg == "pairs" and " (each fighter once)." or " (winner stays).")
+		lines[#lines + 1] = ("Team average %d, spread %d"):format(Util.Round(Rating.TeamAverage(c.ra)), Rating.Spread(c.ra))
+		for i, name in ipairs(c.a) do
+			lines[#lines + 1] = ("%d. %s  %d"):format(i, Short(name), c.ra[i])
+		end
 	end
-	lines[#lines + 1] = "Repeated-matchup restrictions: not tracked yet."
-	lines[#lines + 1] = "Location: one of the candidate duel spots (/td locations)."
-	local members = ns.Session.TeamMembers()
-	if not members then
+	local members, mine = ns.Session.TeamMembers(), nil
+	if c.fmt == 1 then
+		mine = { ns.DB.GetRating(ns.db, ns.Me(), 1) }
+		lines[#lines + 1] = ("Your rating: %d"):format(mine[1])
+	elseif not members then
 		lines[#lines + 1] = Red("Only your team leader can accept.")
 	elseif #members ~= c.fmt then
 		lines[#lines + 1] = Red(("Your team has %d player(s); this challenge needs %d."):format(#members, c.fmt))
+	else
+		mine = ns.Session.TeamRatings(c.fmt)
+		lines[#lines + 1] = ("Your team average %d, spread %d"):format(Util.Round(Rating.TeamAverage(mine)), Rating.Spread(mine))
 	end
-	lines[#lines + 1] = ("Expires in %ds."):format(math.max(0, c.expires - GetServerTime()))
+	if mine then
+		lines[#lines + 1] = "Rating at stake: " .. ns.Session.FormatStakes(ns.Session.RatingStakes(mine, c.ra, c.fmt, c.pg))
+	end
+	lines[#lines + 1] = "Repeated-matchup restrictions: not tracked yet."
+	lines[#lines + 1] = "Location: one of the candidate duel spots (/td locations)."
+	if forPopup then
+		lines[#lines + 1] = "Accepting the duel accepts the challenge. Leaders fight first."
+	else
+		lines[#lines + 1] = ("Expires in %ds."):format(math.max(0, c.expires - GetServerTime()))
+	end
 end
 
 local function MatchLines(lines, m)
@@ -181,7 +201,7 @@ local function Build()
 			SummaryLines(lines, S.lastSummary)
 		end
 		if not (S.challengeIn or S.challengeOut or S.teamChallenge or S.lastSummary) then
-			lines[#lines + 1] = "No match. Challenge a team leader with /td challenge <name>."
+			lines[#lines + 1] = "No match. Right-click a team leader in duel range and choose Challenge (or target them and /td challenge)."
 		end
 	end
 
@@ -193,6 +213,37 @@ end
 -- Frame
 ---------------------------------------------------------------------------
 
+---------------------------------------------------------------------------
+-- Challenge details under Blizzard's own duel request popup ("DUEL_REQUESTED"). Ordinary duels are left
+-- alone. Its Accept/Decline call AcceptDuel/CancelDuel, which Session hooks to accept/decline the challenge.
+-- StaticPopup internals are FrameXML and UNVERIFIED on Forever; the /td window is the fallback.
+---------------------------------------------------------------------------
+
+local DUEL_POPUP = "DUEL_REQUESTED"
+
+local function DuelPopupFontString()
+	if not StaticPopup_FindVisible then return nil end
+	local dialog = StaticPopup_FindVisible(DUEL_POPUP)
+	if not dialog then return nil end
+	if dialog.GetTextFontString then return dialog:GetTextFontString(), dialog end
+	return dialog.Text or dialog.text, dialog
+end
+
+-- Adds the challenge details to the visible duel popup. Returns true if they are showing.
+function UI.DecorateDuelPopup(c)
+	local ok, fs = pcall(DuelPopupFontString)
+	if not (ok and fs and fs.GetText and fs.SetText) then return false end
+	local base = fs:GetText()
+	if not Util.IsReadable(base) or type(base) ~= "string" then return false end
+	local lines = {}
+	ChallengeLines(lines, c, true)
+	local info = table.concat(lines, "\n")
+	if string.find(base, info, 1, true) then return true end
+	fs:SetText(base .. "\n\n" .. info)
+	if StaticPopup_ResizeShownDialogs then pcall(StaticPopup_ResizeShownDialogs) end
+	return true
+end
+
 function UI.Refresh()
 	if not frame or not frame:IsShown() then return end
 	local lines, actions = Build()
@@ -201,7 +252,8 @@ function UI.Refresh()
 		local action = actions[i]
 		if action then
 			b:SetText(action[1])
-			b:SetScript("OnClick", action[2])
+			local fn = action[2]
+			b:SetScript("OnClick", function() fn() end) -- never pass the button frame on as an argument
 			b:ClearAllPoints()
 			b:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 12 + (i - 1) * (BUTTON_WIDTH + 2), 10)
 			b:Show()
@@ -266,4 +318,67 @@ function UI.Init()
 
 	if UISpecialFrames then table.insert(UISpecialFrames, "TeamDuelFrame") end -- close with Escape
 	frame:Hide()
+	UI.InstallUnitMenu()
+end
+
+---------------------------------------------------------------------------
+-- "Challenge" on the right-click menu of players, right below Blizzard's "Duel", with a 1v1/2v2/3v3 submenu.
+-- Menu.ModifyMenu / MenuUtil are Retail 11.x FrameXML and UNVERIFIED on Forever: the dump has
+-- UnitPopup_OpenMenu (the same menu system) but doesn't list FrameXML tables. /td challenge is the fallback.
+---------------------------------------------------------------------------
+
+local CHALLENGE_LABEL = "Challenge"
+local UNIT_MENUS = {
+	"MENU_UNIT_PLAYER", "MENU_UNIT_TARGET", "MENU_UNIT_FOCUS",
+	"MENU_UNIT_PARTY", "MENU_UNIT_RAID_PLAYER", "MENU_UNIT_FRIEND",
+}
+
+-- Index of the "Duel" entry, or nil.
+local function DuelIndex(root)
+	for index, desc in root:EnumerateElementDescriptions() do
+		if MenuUtil.GetElementText(desc) == DUEL then return index end
+	end
+end
+
+local function AddChallenge(_, root, contextData)
+	if type(contextData) ~= "table" or not Util.IsReadable(contextData.name) then return end
+	local unit = contextData.unit
+	if unit then
+		local isPlayer, isMe = UnitIsPlayer(unit), UnitIsUnit(unit, "player")
+		if not (Util.IsReadable(isPlayer) and isPlayer) then return end
+		if not Util.IsReadable(isMe) or isMe then return end
+	end
+	local server = Util.IsReadable(contextData.server) and contextData.server ~= "" and contextData.server or nil
+	local name = server and (contextData.name .. "-" .. server) or contextData.name
+	if ns.Canonical(name) == ns.Me() then return end
+	local function AddFormats(challenge)
+		for fmt = 1, ns.Config.MAX_TEAM_SIZE do
+			challenge:CreateButton(("%dv%d"):format(fmt, fmt), function() ns.Session.Challenge(name, unit, fmt) end)
+		end
+	end
+
+	local ok, index = pcall(DuelIndex, root)
+	if ok and index then
+		local challenge = MenuUtil.CreateButton(CHALLENGE_LABEL)
+		AddFormats(challenge)
+		if pcall(root.Insert, root, challenge, index + 1) then return end
+	end
+	-- No "Duel" entry (or the API differs): append at the end instead.
+	root:CreateDivider()
+	AddFormats(root:CreateButton(CHALLENGE_LABEL))
+end
+
+function UI.InstallUnitMenu()
+	if not (Menu and Menu.ModifyMenu) then
+		ns.Log("warn", "Menu.ModifyMenu unavailable; no right-click Challenge, use /td challenge")
+		return
+	end
+	for _, tag in ipairs(UNIT_MENUS) do
+		local ok, err = pcall(Menu.ModifyMenu, tag, function(owner, root, contextData)
+			local okAdd, errAdd = pcall(AddChallenge, owner, root, contextData)
+			if not okAdd then ns.Log("error", "unit menu", tag, errAdd) end
+		end)
+		if not ok then ns.Log("warn", "Menu.ModifyMenu", tag, err) end
+	end
+	ns.Log("info", "unit menu Challenge installed")
 end

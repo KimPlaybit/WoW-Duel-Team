@@ -70,8 +70,8 @@ local HELP = {
 	"/td invite <name> - invite a player to your team (you lead; max 3)",
 	"/td join - accept a team invite",
 	"/td leave - leave your team (or disband it as leader)",
-	"/td order <name> <name> ... - set your team's fighter order",
-	"/td challenge <leader> - challenge another team (format = your team size)",
+	"/td order <name> <name> ... - set your team's fighter order (the leader always fights first)",
+	"/td challenge [1v1|2v2|3v3] [name] - challenge your target (or right-click them > Challenge); you must be in duel range",
 	"/td accept | decline - answer a challenge",
 	"/td duel - send the duel request to your current opponent",
 	"/td won | lost - report your duel result manually",
@@ -88,7 +88,11 @@ local Commands = {
 	join = function() ns.Session.JoinTeam() end,
 	leave = function() ns.Session.LeaveTeam() end,
 	order = function(args) ns.Session.SetOrder(args) end,
-	challenge = function(args) ns.Session.Challenge(args[1]) end,
+	challenge = function(args)
+		local fmt = tonumber(string.match(string.lower(args[1] or ""), "^([123])v%1$"))
+		if fmt then table.remove(args, 1) end
+		ns.Session.Challenge(args[1], nil, fmt)
+	end,
 	accept = function() ns.Session.Accept() end,
 	decline = function() ns.Session.Decline() end,
 	duel = function() ns.Session.StartDuel() end,

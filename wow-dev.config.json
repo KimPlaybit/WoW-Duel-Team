@@ -1,0 +1,6 @@
+{
+  "$comment": "Game installs that scripts/deploy.ps1 links src/* into. Override per machine in wow-dev.config.local.json (gitignored).",
+  "targets": {
+    "live": "D:\\WoWForeverLive\\World of Warcraft\\_forever_"
+  }
+}

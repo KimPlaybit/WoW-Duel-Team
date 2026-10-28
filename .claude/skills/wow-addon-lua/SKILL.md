@@ -92,10 +92,9 @@ Register `ADDON_ACTION_BLOCKED` and `ADDON_ACTION_FORBIDDEN` and log them. Anyth
 automated path is only an optimization that falls back to that button (info rule 10).
 
 ## Dev loop
-- The reference environment is in `.ref/WoW-Addons`: `scripts/deploy.ps1` junction-links `src/*` into the game,
-  `scripts/new-addon.ps1` scaffolds, and `.luacheckrc` is the lint config.
-  The game path is in `wow-dev.config.json` (`gamePath`, `flavorDir` `_classic_beta_`). Ask the user for their
-  path, or copy the scripts and config into this repo and adapt them, instead of guessing.
+- `.\scripts\deploy.ps1` junction-links `src/*` into every install listed under `targets` in `wow-dev.config.json`
+  (only `live` = `D:\WoWForeverLive\...\_forever_`; the old `_classic_beta_` install doesn't work; `-Clean` removes the links).
+  Override paths per machine in the gitignored `wow-dev.config.local.json`. The original scripts live in `.ref/WoW-Addons/scripts`.
 - After a Lua edit: `/reload` in game. Redeploy only after adding or removing files or TOCs.
 - **Run `.\scripts\check.ps1` after every Lua change.** It runs luacheck over `src`, `prototypes` and `tests`,
   then the unit tests. It must exit 0 before I report the work as done.

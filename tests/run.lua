@@ -3,6 +3,7 @@
 -- A spec loads addon files with LoadAddonFile(path, ns), which mimics the WoW loader
 -- passing (addonName, ns) as varargs.
 
+local print = print -- tests/sim.lua replaces the global print to capture chat output
 local passed, failed, current = 0, 0, ""
 
 function describe(name, fn) current = name; fn() end
