@@ -53,21 +53,21 @@ end
 -- Content
 ---------------------------------------------------------------------------
 
-local function TeamLines(lines, S)
-	local me = ns.Me()
-	if S.team and S.team.leader ~= me then
-		lines[#lines + 1] = "Team: member of " .. Short(S.team.leader) .. "'s team."
+local function TeamLines(lines)
+	local Session = ns.Session
+	local members = Session.TeamMembers()
+	if not members then
+		lines[#lines + 1] = ("Team: %s's party (they lead and send challenges)."):format(Short(Session.PartyLeader()))
 		return
 	end
-	local members = ns.Session.TeamMembers()
-	if not members or #members == 1 then
-		lines[#lines + 1] = "Solo (1v1). Invite teammates with /td invite <name>."
+	if #members == 1 then
+		lines[#lines + 1] = "Solo: 1v1 only. Form a party of 2 or 3 for 2v2/3v3."
 		return
 	end
-	local ratings = ns.Session.TeamRatings(#members)
+	local ratings = Session.TeamRatings(#members)
 	local parts = {}
 	for i, name in ipairs(members) do parts[i] = ("%d. %s (%d)"):format(i, Short(name), ratings[i]) end
-	lines[#lines + 1] = ("Your team, %dv%d, fighter order: %s"):format(#members, #members, table.concat(parts, ", "))
+	lines[#lines + 1] = ("Your party, %dv%d, fighter order: %s"):format(#members, #members, table.concat(parts, ", "))
 end
 
 -- Spec §4.1 / §10.1: who, format, team average, every player's rating, restrictions, location.
@@ -90,7 +90,7 @@ local function ChallengeLines(lines, c, forPopup)
 		mine = { ns.DB.GetRating(ns.db, ns.Me(), 1) }
 		lines[#lines + 1] = ("Your rating: %d"):format(mine[1])
 	elseif not members then
-		lines[#lines + 1] = Red("Only your team leader can accept.")
+		lines[#lines + 1] = Red("Only your party leader can accept.")
 	elseif #members ~= c.fmt then
 		lines[#lines + 1] = Red(("Your team has %d player(s); this challenge needs %d."):format(#members, c.fmt))
 	else
@@ -121,22 +121,23 @@ local function MatchLines(lines, m)
 		local label = m.progression == "pairs" and "Next up" or "Next in if they lose"
 		lines[#lines + 1] = ("%s: %s / %s"):format(label, nextA and Short(nextA) or "-", nextB and Short(nextB) or "-")
 	end
-	if duel.disputes > 0 then
-		lines[#lines + 1] = Red(("Attempt %d: earlier reports disagreed. Re-run the duel."):format(duel.disputes + 1))
+	if duel.attempt > 0 then
+		lines[#lines + 1] = Red(("Attempt %d: the duel is being fought again."):format(duel.attempt + 1))
 	end
-	local reports = duel.reports[duel.disputes] or {}
-	for _, fighter in ipairs({ duel.a, duel.b }) do
-		if reports[fighter] then
-			lines[#lines + 1] = ("%s reported: %s won."):format(Short(fighter), Short(reports[fighter]))
+	local reports = duel.reports[duel.attempt] or {}
+	for _, side in ipairs({ "A", "B" }) do
+		if reports[side] then
+			lines[#lines + 1] = ("%s read: %s won."):format(side == "A" and teamA or teamB, Short(reports[side]))
 		end
 	end
 	local myDuel = ns.Session.MyDuel()
-	if myDuel then
-		if ns.Session.state.awaitingManual then
-			lines[#lines + 1] = Gold("Who won? Click 'I won' or 'I lost'.")
-		else
-			lines[#lines + 1] = Gold("You are up: start the duel or accept their request.")
-		end
+	if myDuel and duel.accepted[duel.attempt] then
+		lines[#lines + 1] = Gold("You are fighting.")
+	elseif myDuel and ns.Session.state.countdown then
+		lines[#lines + 1] = Gold(("You are up: %ds left to start the duel. Walk toward them (the clock slows); moving away forfeits."):format(
+			math.max(0, math.ceil(ns.Session.state.countdown.remaining))))
+	elseif myDuel then
+		lines[#lines + 1] = Gold("You are up: start the duel or accept their request.")
 	else
 		lines[#lines + 1] = "You are not in this duel."
 	end
@@ -150,6 +151,10 @@ local function SummaryLines(lines, r)
 	local myTeam = Util.IndexOf(r.teamA, ns.Me()) and "A" or "B"
 	local outcome = (r.result == "draw" and "Draw") or (r.result == myTeam and "Victory") or "Defeat"
 	lines[#lines + 1] = Gold(("Last match: %s (%d-%d)"):format(outcome, r.wins.A, r.wins.B))
+	if r.forfeit then
+		lines[#lines + 1] = Red(("%s: %s."):format(ns.Session.ForfeitText(r.forfeit, r.teamA[1], r.teamB[1]),
+			ns.Session.ForfeitReasonText(r.reason)))
+	end
 	for i, d in ipairs(r.duels) do
 		local loser = d.winner == d.a and d.b or d.a
 		lines[#lines + 1] = ("   Duel %d: %s beat %s"):format(i, Short(d.winner), Short(loser))
@@ -161,25 +166,13 @@ end
 local function Build()
 	local S, Session = ns.Session.state, ns.Session
 	local lines, actions = {}, {}
-	TeamLines(lines, S)
+	TeamLines(lines)
 	lines[#lines + 1] = " "
-
-	if S.inviteIn then
-		lines[#lines + 1] = Gold(Short(S.inviteIn.from) .. " invited you to their team.")
-		actions[#actions + 1] = { "Join team", Session.JoinTeam }
-		actions[#actions + 1] = { "Ignore", Session.IgnoreInvite }
-	end
 
 	if S.match then
 		MatchLines(lines, S.match)
 		if Session.MyDuel() then
 			actions[#actions + 1] = { "Start duel", Session.StartDuel }
-			actions[#actions + 1] = { "I won", function() Session.Report(true) end }
-			actions[#actions + 1] = { "I lost", function() Session.Report(false) end }
-		end
-		local me = ns.Me()
-		if me == S.match.leaderA or me == S.match.leaderB then
-			actions[#actions + 1] = { "Abort", Session.Abort }
 		end
 	else
 		if S.challengeIn then
@@ -201,7 +194,7 @@ local function Build()
 			SummaryLines(lines, S.lastSummary)
 		end
 		if not (S.challengeIn or S.challengeOut or S.teamChallenge or S.lastSummary) then
-			lines[#lines + 1] = "No match. Right-click a team leader in duel range and choose Challenge (or target them and /td challenge)."
+			lines[#lines + 1] = "No match. Right-click a player in duel range and choose Challenge (or target them and /td challenge). For 2v2/3v3, challenge the other party's leader."
 		end
 	end
 
@@ -351,9 +344,12 @@ local function AddChallenge(_, root, contextData)
 	local server = Util.IsReadable(contextData.server) and contextData.server ~= "" and contextData.server or nil
 	local name = server and (contextData.name .. "-" .. server) or contextData.name
 	if ns.Canonical(name) == ns.Me() then return end
+	-- 1v1 is always available; 2v2/3v3 are greyed out unless we lead a party of exactly that size.
+	-- SetEnabled is UNVERIFIED on Forever; Challenge re-checks and explains either way.
 	local function AddFormats(challenge)
 		for fmt = 1, ns.Config.MAX_TEAM_SIZE do
-			challenge:CreateButton(("%dv%d"):format(fmt, fmt), function() ns.Session.Challenge(name, unit, fmt) end)
+			local button = challenge:CreateButton(("%dv%d"):format(fmt, fmt), function() ns.Session.Challenge(name, unit, fmt) end)
+			if button and button.SetEnabled then pcall(button.SetEnabled, button, ns.Session.FormatAvailable(fmt)) end
 		end
 	end
 

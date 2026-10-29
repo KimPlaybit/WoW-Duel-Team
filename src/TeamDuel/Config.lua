@@ -16,7 +16,7 @@ ns.Config = {
 	RATING_START = 1500,
 	RATING_K = 32,
 
-	-- A duel whose fighters report different winners is re-run; after this many disputes the match is aborted
+	-- A duel whose teams report different winners is re-run; after this many disputes the match is aborted
 	-- without rating changes (spec §11.4: never silently produce a wrong winner).
 	MAX_DISPUTES_PER_DUEL = 2,
 
@@ -28,6 +28,15 @@ ns.Config = {
 	-- PROVISIONAL: when the range can't be read (API errors or returns a secret), "allow" sends the
 	-- challenge with a warning; "block" refuses it.
 	DUEL_RANGE_UNKNOWN = "allow",
+	-- For 2v2/3v3 every party member must stand within this many yards of their leader (decided by the user).
+	-- Measured with UnitDistanceSquared (in the Forever dump, behavior UNVERIFIED); unreadable falls under
+	-- DUEL_RANGE_UNKNOWN.
+	TEAM_RANGE_YARDS = 20,
+	-- Player tooltips: seconds without an answer before a player counts as having no addon (shown as 0),
+	-- seconds a player's ratings stay fresh, and the minimum gap between rating requests (and replies).
+	TOOLTIP_NO_REPLY = 3,
+	TOOLTIP_REFRESH = 60,
+	TOOLTIP_ASK_GAP = 1,
 	HISTORY_LIMIT = 500,            -- stored matches
 	LOG_LIMIT = 500,                -- debug log lines
 
@@ -38,8 +47,23 @@ ns.Config = {
 	ACK_TIMEOUT = 3,
 	MAX_RETRIES = 3,
 
-	-- Seconds after DUEL_FINISHED to wait for the system message before asking for a manual result.
-	AUTO_RESULT_GRACE = 2,
+	-- Forfeits (decided by the user: stalling or disconnecting forfeits; there are no manual results or aborts).
+	-- PROVISIONAL values (spec §12 #5, #9):
+	-- Preparation countdown between duels (spec §7; Position.lua). The 10 s is decided by the user, the rest
+	-- is PROVISIONAL.
+	COUNTDOWN = 10,             -- seconds for the next duel to be accepted
+	COUNTDOWN_SLOW_RATE = 0.25, -- clock speed while the fighters close in on each other
+	COUNTDOWN_NO_POSITION = 30, -- seconds the countdown lasts when positions can't be read
+	POS_INTERVAL = 2,           -- seconds between position samples (each one is an addon message)
+	MOVE_YARDS = 1.5,           -- movement per sample that counts as closing in / moving away
+	AVOID_SAMPLES = 2,          -- samples in a row of moving away while the other closes in = forfeit
+	DUEL_RANGE_YARDS = 10,      -- close enough to send the duel request
+	REQUEST_GRACE = 3,          -- the scheduled request arrived: at least this many seconds left to accept it
+	STALL_BACKSTOP = 120,       -- every client: forfeit by the duel request if the fighters' clients never decide
+	RESULT_WAIT = 10,       -- seconds after a duel ends for both teams' results, else the duel is re-run
+	DUEL_MAX_LENGTH = 600,  -- seconds an accepted duel may take before it's re-run (it may never have started)
+	HEARTBEAT = 10,         -- seconds between "still here" pings during a match
+	OFFLINE_AFTER = 45,     -- seconds of silence before a player counts as gone and their team forfeits
 
 	-- PROVISIONAL (§12 #7): candidate duel spots, see docs/decisions.md. Map IDs and coordinates are
 	-- deliberately absent until recorded in game with /td where.

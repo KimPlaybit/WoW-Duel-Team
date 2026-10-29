@@ -52,6 +52,7 @@ local SPECS = {
 	"tests/rating_spec.lua",
 	"tests/match_spec.lua",
 	"tests/duelresult_spec.lua",
+	"tests/position_spec.lua",
 	"tests/db_spec.lua",
 	"tests/flow_spec.lua", -- last: installs fake WoW globals
 }

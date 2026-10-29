@@ -6,7 +6,7 @@ local _, ns = ...
 local Comm = {}
 ns.Comm = Comm
 
-local RELIABLE = { TINV = true, TJOIN = true, TLEAVE = true, CHAL = true, ACC = true, DEC = true, RES = true, ABORT = true }
+local RELIABLE = { TRAT = true, CHAL = true, ACC = true, DEC = true, RES = true, DST = true, FORF = true }
 
 local queue = {}      -- { target, text }
 local pending = {}    -- [seq] = { target, text, type, tries, sentAt }

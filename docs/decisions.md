@@ -2,6 +2,78 @@
 
 Tracks the open decisions from spec §12. Newest first. "Provisional" means it can still change.
 
+## 2026-10-29: No manual results or aborts; stalling and disconnecting forfeit (decided by the user)
+
+Removed: `/td won|lost`, `/td abort`, `/td abandon`, the I won / I lost / Abort buttons, and the ABORT message.
+This deliberately drops the manual fallback for results (a CLAUDE.md non-negotiable) at the user's request:
+self-reported results can't be trusted. The duel request itself stays manual (Start duel / Blizzard's popup).
+
+- **Results (user: "the duel message is always visible"):** both duelists always see the duel message, one on each
+  team, and their addons send it to everyone in the match (RES). A duel counts when the first report from each team
+  names the same winner. Teammates and waiting fighters who also see it report too, as backup readers; whether
+  bystanders see it on Forever is UNVERIFIED but not required.
+- **No readable result:** `RESULT_WAIT` (10 s) after DUEL_FINISHED, a fighter's client sends DST rerun and the duel
+  is fought again as a new attempt. An accepted duel with no outcome after `DUEL_MAX_LENGTH` (10 min) is re-run too.
+- **Disputes:** the teams read different winners, so the duel is re-run. After `MAX_DISPUTES_PER_DUEL` the match
+  still ends without rating changes. That's the one remaining no-result outcome; it needs clients reading
+  different text from the same message (tampering or a bug). **Open:** the user said a no-rating end is a problem,
+  so this may need a different rule.
+- **Disconnect = forfeit, with rating changes (spec §12 #9):**
+  - A party member sees `UnitIsConnected(partyN) == false` or gets UNIT_CONNECTION, and announces their own team's
+    forfeit (FORF, which is trusted only about the sender's own team).
+  - Everyone pings every `HEARTBEAT` (10 s). A player silent for `OFFLINE_AFTER` (45 s) forfeits for their team.
+    The current fighters aren't judged while their accepted duel runs, in case messages are blocked in duels.
+  - The running match is kept in SavedVariables (`activeMatch`). A client that comes back after a reload, logout
+    or disconnect records its team's forfeit at login and announces it. A client crash doesn't save it.
+- **Countdown and stalling (spec §7, §12 #5; user, 2026-10-29):** the next duel must start within `COUNTDOWN`
+  (10 s, decided by the user). Position.lua runs the clock on the two fighters' clients, which swap positions
+  (`UnitPosition("player")`, POS message) every `POS_INTERVAL` (2 s).
+  - The clock runs at `COUNTDOWN_SLOW_RATE` (0.25) while the gap closes; otherwise at full speed (user: "if they
+    walk towards each other... the 10 seconds don't count down as fast").
+  - Avoiding forfeits (user): moving away by `MOVE_YARDS` (1.5) or more while the other closes in, for
+    `AVOID_SAMPLES` (2) samples in a row.
+  - The clock runs out apart: the fighter who closed in less forfeits, or both teams if neither did (provisional).
+  - It runs out within duel range: the request decides (provisional). The receiver who didn't accept forfeits;
+    if no request arrived, **both teams forfeit and both take a loss**.
+  - Positions unreadable, secret or on another map: the clock lasts `COUNTDOWN_NO_POSITION` (30 s) and the
+    request decides (provisional; the spec said no automatic forfeit without positions, the user wants one).
+  - A silent opponent holds the clock, so a disconnect is judged by `OFFLINE_AFTER` instead of forfeiting both.
+  - The fighter whose client ends the countdown announces it (FORF avoid/stall). Other clients accept that from
+    either current fighter, so the opponent's client is trusted here, like any client-reported result.
+  - `STALL_BACKSTOP` (120 s) on every client covers fighters' clients that never decide.
+  - This replaces spec §8.1's "a failed duel request alone never causes a forfeit", per the user.
+  - Auto-accept (user): the scheduled opponent's request is accepted for the player from DUEL_REQUESTED
+    (`AcceptDuel`, unverified without a click). Backup: the player clicks Accept. When the request arrives (DST rcv),
+    the clock goes up to `REQUEST_GRACE` (3 s, user) if it's lower; then it continues as before. All backups are
+    in [fallbacks.md](fallbacks.md).
+- New messages: DST (d, t, s = rcv/acc/rerun), FORF (tm = A/B/both, why), PING, POS (x, y, mp). ACC has a new `da` field: whether the first
+  duel was accepted along with the challenge.
+
+## 2026-10-29: Ratings in player tooltips (decided by the user)
+
+- Hovering a player adds `TeamDuel: 1v1 X  2v2 Y  3v3 Z` under their name in the unit tooltip.
+- A player whose addon doesn't answer within `Config.TOOLTIP_NO_REPLY` (3 s) is shown with 0 (decided by the user).
+  This also covers players who are offline or on the other faction, since we can't whisper them.
+- How: hovering whispers `RREQ` (our ratings) and they answer with `RINF` (theirs). Both are unreliable (no ACK).
+  Answers are cached for `TOOLTIP_REFRESH` (60 s), and requests and replies are at least `TOOLTIP_ASK_GAP` (1 s)
+  apart, so hovering a crowd can't flood the shared comm queue. No requests in combat lockdown.
+- These ratings are self-reported and stored on the other player's computer. They are only displayed and never
+  feed a match (a challenge carries its own ratings).
+- Hook: `GameTooltip:HookScript("OnTooltipSetUnit")` (listed in the reference UI schema, unverified), falling back
+  to `TooltipDataProcessor`, which isn't in the Forever dump.
+
+## 2026-10-28: Teams are parties (decided by the user)
+
+- A team is the player's WoW party (not a raid); the party leader is the team leader. `/td invite|join|leave` and the
+  TINV/TJOIN/TLEAVE messages are gone; members whisper their ratings to the leader (`TRAT`) when the group changes.
+- 2v2 needs a party of exactly 2 and 3v3 exactly 3; solo players play 1v1. In the right-click menu, 1v1 is never greyed
+  out, 2v2/3v3 are greyed out unless we lead a party of exactly that size (`SetEnabled`, unverified; the click re-checks).
+- Every party member must be within 20 yards of their leader (decided by the user; `Config.TEAM_RANGE_YARDS`),
+  measured with `UnitDistanceSquared(partyN)` (in the Forever dump, unverified in game; unreadable falls under
+  `Config.DUEL_RANGE_UNKNOWN`). Checked on the challenger's side when challenging and on the other side when the
+  challenge arrives and when it's accepted. A member whose addon hasn't reported ratings blocks the challenge.
+- Fighter order: the leader first, then the party order unless the leader sets one with `/td order`.
+
 ## 2026-10-28: The challenge is the duel request; leaders fight first (decided by the user)
 
 - Every player starts at 1500 in each format; rating points are Elo on team averages (K=32, see below).
@@ -43,7 +115,7 @@ These are placeholders so the code can run. All of them live in `src/TeamDuel/Co
 | #3 Rating algorithm | Elo on team averages, K=32, start 1500, per format; same delta for every team member | Common default. |
 | #6 Identity | `Name-Realm` | Stable and readable. GUID stability is unverified on Forever. |
 | #8 Duel automation | ~~Request from a button click; accept is always the player clicking Blizzard's popup~~ Superseded: see "The challenge is the duel request" above. | `StartDuel`/`AcceptDuel` protection is unverified. |
-| #9 Disconnects | No auto-forfeit. Unresponsive peers pause the match; a leader can `/td abort`, and anyone can `/td abandon` locally. | Spec §11.4: never silently decide. |
+| #9 Disconnects | Superseded 2026-10-29: disconnecting or leaving forfeits (see the entry at the top). | Decided by the user. |
 | #10 Rating storage | Local SavedVariables only (milestone 1, spec §13) | Already decided in the spec. |
 | — Result trust | A duel counts only when both fighters report the same winner (auto from the system message, or manual buttons). Two disputes on one duel abort the match. | §11.2, §11.4 |
 

@@ -12,8 +12,10 @@ Protocol.lua
 Rating.lua
 Match.lua
 DuelResult.lua
+Position.lua
 DB.lua
 Comm.lua
 Session.lua
 UI.lua
+Tooltip.lua
 Init.lua

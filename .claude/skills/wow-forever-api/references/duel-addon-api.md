@@ -38,6 +38,8 @@ Dump checked: build 70170, Interface 16001, 2026-10-28.
 | `StaticPopup_Show` / `StaticPopup_FindVisible` / `hooksecurefunc` | G | Exist (undocumented). Used to add challenge details to Blizzard's `DUEL_REQUESTED` popup and post-hook `AcceptDuel`/`CancelDuel`. Dialog text region (`GetTextFontString` / `.Text`) unverified. | Unverified | Fallback: `/td accept`/`decline` window. |
 | `Menu.ModifyMenu(tag, fn)` / `MenuUtil` | FrameXML | Adds "Challenge" to `MENU_UNIT_*` right-click menus. Not in the dump (it lists only `C_*` tables); `UnitPopup_OpenMenu` is, so the 11.x menu system is likely present. | Unverified | Fallback: `/td challenge`. |
 | `CheckInteractDistance(unit, idx)` / `UnitInRange(unit)` | D | Coarse range booleans. `UnitInRange` is for group members only. | Partially | Gates challenges: `CheckInteractDistance("target", 3)` must be true (duel range). Index 3 and in-combat behavior UNVERIFIED. |
+| `GameTooltip:HookScript("OnTooltipSetUnit", fn)` / `tooltip:GetUnit()` | FrameXML | `OnTooltipSetUnit` is in the reference UI.xsd; `TooltipDataProcessor` is NOT in the dump. | Unverified | Rating line in player tooltips (Tooltip.lua). `GetUnit` may return secrets in combat; guarded. |
+| `UnitDistanceSquared(unit)` → `distance, checkedDistance` | D | In the dump. | Unverified | Party members within `Config.TEAM_RANGE_YARDS` (20) of their leader for 2v2/3v3. Treat `checked == false` or secret as unknown. |
 | `ZONE_CHANGED`, `ZONE_CHANGED_NEW_AREA`, `ZONE_CHANGED_INDOORS` | D | Exist. | Verified (exists) | — |
 
 ## Units, identity, group

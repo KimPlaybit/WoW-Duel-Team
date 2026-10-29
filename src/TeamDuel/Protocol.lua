@@ -58,6 +58,11 @@ end
 
 local Rating = Int(0, 9999)
 
+-- World coordinates in yards, at most one decimal.
+local function Coord(s)
+	if #s <= 10 and string.match(s, "^%-?%d+%.?%d?$") then return tonumber(s) end
+end
+
 local FIELDS = {
 	fmt = Int(1, 3),
 	pg = OneOf({ pairs = true, winnerStays = true }),
@@ -69,8 +74,14 @@ local FIELDS = {
 	exp = Int(0, 2147483647),
 	d = Int(1, 9),
 	w = Name,
-	t = Int(0, 9),
-	src = OneOf({ auto = true, manual = true }),
+	t = Int(0, 99),
+	src = OneOf({ auto = true }),
+	s = OneOf({ rcv = true, acc = true, rerun = true }),
+	da = Int(0, 1),
+	tm = OneOf({ A = true, B = true, both = true }),
+	x = Coord,
+	y = Coord,
+	mp = Int(0, 99999999),
 	why = Word,
 	ack = Seq,
 	r1 = Rating,
@@ -80,19 +91,24 @@ local FIELDS = {
 
 -- Required fields per message type, in wire order.
 local SCHEMA = {
-	TINV = {},                                       -- team invite (leader -> player)
-	TJOIN = { "r1", "r2", "r3" },                    -- accept invite, with own 1v1/2v2/3v3 ratings
-	TLEAVE = {},                                     -- leave team / disband (leader -> members)
+	TRAT = { "r1", "r2", "r3" },                     -- party member -> party leader: own 1v1/2v2/3v3 ratings
+	RREQ = { "r1", "r2", "r3" },                     -- tooltip: here are mine, what are yours?
+	RINF = { "r1", "r2", "r3" },                     -- tooltip: the answer to RREQ
 	CHAL = { "fmt", "pg", "a", "ra", "exp" },        -- challenge: team a in fighter order + ratings
-	ACC = { "fmt", "pg", "a", "ra", "b", "rb", "li" }, -- accept: both rosters, li = index of challenging leader in a
+	ACC = { "fmt", "pg", "a", "ra", "b", "rb", "li", "da" }, -- accept: both rosters, li = index of challenging
+	                                                 -- leader in a, da = 1 if the first duel was accepted with it
 	DEC = { "why" },                                 -- decline
-	RES = { "d", "w", "t", "src" },                  -- duel d result: winner w, report attempt t
-	ABORT = { "why" },
+	RES = { "d", "w", "t", "src" },                  -- duel d result: winner w, attempt t (from any player in the match)
+	DST = { "d", "t", "s" },                         -- fighter: duel d attempt t request received / accepted / rerun
+	FORF = { "tm", "why" },                          -- team tm forfeits: from its own member (offline, left), or
+	                                                 -- from a current fighter (avoid, stall: the countdown)
+	POS = { "x", "y", "mp" },                        -- fighter -> opposing fighter: my position during the countdown
+	PING = {},                                       -- still here (during a match)
 	ACK = { "ack" },
 }
 Protocol.SCHEMA = SCHEMA
 
-local NEEDS_MATCH_ID = { CHAL = true, ACC = true, DEC = true, RES = true, ABORT = true }
+local NEEDS_MATCH_ID = { CHAL = true, ACC = true, DEC = true, RES = true, DST = true, FORF = true, PING = true, POS = true }
 
 local CONSISTENCY = {
 	CHAL = function(f)

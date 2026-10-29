@@ -1,5 +1,5 @@
 -- Loads the pure addon modules into a fresh namespace, in TOC order.
-local PURE = { "Util", "Config", "Protocol", "Rating", "Match", "DuelResult", "DB" }
+local PURE = { "Util", "Config", "Protocol", "Rating", "Match", "DuelResult", "Position", "DB" }
 
 function LoadPure()
 	local ns = {}

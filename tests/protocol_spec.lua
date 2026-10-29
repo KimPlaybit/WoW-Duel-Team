@@ -18,9 +18,11 @@ describe("Protocol", function()
 		expect(msg.fields.ra[2]).toBe(1620)
 	end)
 
-	it("encodes messages without fields", function()
-		local text = assert(P.Encode({ type = "TINV", mid = "-", seq = "1:1", fields = {} }))
-		expect(P.Decode(text).type).toBe("TINV")
+	it("round-trips a party member's ratings", function()
+		local text = assert(P.Encode({ type = "TRAT", mid = "-", seq = "1:1", fields = { r1 = 1500, r2 = 1620, r3 = 1480 } }))
+		local msg = P.Decode(text)
+		expect(msg.type).toBe("TRAT")
+		expect(msg.fields.r2).toBe(1620)
 	end)
 
 	it("rejects a roster that does not match the format", function()
@@ -34,7 +36,7 @@ describe("Protocol", function()
 	it("rejects an accept whose challenging leader index is outside team A", function()
 		local text, err = P.Encode({
 			type = "ACC", mid = "1:1", seq = "1:2",
-			fields = { fmt = 1, pg = "pairs", a = { "Alice-Realm" }, ra = { 1500 }, b = { "Carol-Realm" }, rb = { 1500 }, li = 2 },
+			fields = { fmt = 1, pg = "pairs", a = { "Alice-Realm" }, ra = { 1500 }, b = { "Carol-Realm" }, rb = { 1500 }, li = 2, da = 0 },
 		})
 		expect(text).toBe(nil)
 		expect(err).toBe("inconsistent ACC")
@@ -64,9 +66,9 @@ describe("Protocol", function()
 		expect(P.Decode("")).toBe(nil)
 		expect(P.Decode(string.rep("x", 256))).toBe(nil)
 		expect(P.Decode("1|CHAL|m|1:1")).toBe(nil)                    -- too few parts
-		expect(P.Decode("2|TINV|-|1:1|")).toBe(nil)                   -- wrong version
+		expect(P.Decode("2|TRAT|-|1:1|r1=1;r2=1;r3=1")).toBe(nil)      -- wrong version
 		expect(P.Decode("1|HACK|-|1:1|")).toBe(nil)                   -- unknown type
-		expect(P.Decode("1|TINV|-|abc|")).toBe(nil)                   -- bad seq
+		expect(P.Decode("1|TRAT|-|abc|r1=1;r2=1;r3=1")).toBe(nil)      -- bad seq
 		expect(P.Decode("1|RES|-|1:1|d=1;w=A-R;t=0;src=auto")).toBe(nil) -- result without match id
 	end)
 
@@ -75,8 +77,8 @@ describe("Protocol", function()
 		expect(P.Decode("1|RES|m|1:1|d=0;w=A-R;t=0;src=auto")).toBe(nil)
 		expect(P.Decode("1|RES|m|1:1|d=1;w=A-R;t=0;src=guess")).toBe(nil)
 		expect(P.Decode("1|RES|m|1:1|d=1.5;w=A-R;t=0;src=auto")).toBe(nil)
-		expect(P.Decode("1|TJOIN|-|1:1|r1=1500;r2=1500")).toBe(nil)   -- missing r3
-		expect(P.Decode("1|TJOIN|-|1:1|r1=1;r1=2;r2=1;r3=1")).toBe(nil) -- duplicate key
+		expect(P.Decode("1|TRAT|-|1:1|r1=1500;r2=1500")).toBe(nil)    -- missing r3
+		expect(P.Decode("1|TRAT|-|1:1|r1=1;r1=2;r2=1;r3=1")).toBe(nil)  -- duplicate key
 	end)
 
 	it("ignores unknown extra fields", function()
@@ -99,7 +101,7 @@ describe("Protocol", function()
 		end
 		return {
 			type = "ACC", mid = "1700000000:999999", seq = "1700000000:42",
-			fields = { fmt = 3, pg = "winnerStays", a = a, ra = { 2500, 2500, 2500 }, b = b, rb = { 2500, 2500, 2500 }, li = 1 },
+			fields = { fmt = 3, pg = "winnerStays", a = a, ra = { 2500, 2500, 2500 }, b = b, rb = { 2500, 2500, 2500 }, li = 1, da = 1 },
 		}
 	end
 

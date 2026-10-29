@@ -22,7 +22,9 @@ ns.On("PLAYER_LOGIN", function()
 	ns.Comm.Init()
 	ns.Session.Init()
 	ns.UI.Init()
+	ns.Tooltip.Init()
 	ns.ready = true
+	ns.Session.ResumeLeftMatch()
 	ns.Log("info", "loaded", "version", C_AddOns.GetAddOnMetadata(addonName, "Version"), "build", select(2, GetBuildInfo()))
 	ns.Print("loaded. /td opens the window, /td help lists commands.")
 end)
@@ -58,6 +60,10 @@ local function History()
 		local when = date("%Y-%m-%d %H:%M", r.ts)
 		if r.status == "aborted" then
 			ns.Print(("%s %dv%d aborted (%s)"):format(when, r.fmt, r.fmt, tostring(r.reason)))
+		elseif r.status == "forfeit" then
+			ns.Print(("%s %dv%d %s's team vs %s's team: %s (%s)"):format(when, r.fmt, r.fmt,
+				Util.ShortName(r.teamA[1]), Util.ShortName(r.teamB[1]),
+				ns.Session.ForfeitText(r.forfeit, r.teamA[1], r.teamB[1]), ns.Session.ForfeitReasonText(r.reason)))
 		else
 			ns.Print(("%s %dv%d %s's team %d-%d %s's team"):format(when, r.fmt, r.fmt,
 				Util.ShortName(r.teamA[1]), r.wins.A, r.wins.B, Util.ShortName(r.teamB[1])))
@@ -67,26 +73,25 @@ end
 
 local HELP = {
 	"/td - open or close the window",
-	"/td invite <name> - invite a player to your team (you lead; max 3)",
-	"/td join - accept a team invite",
-	"/td leave - leave your team (or disband it as leader)",
-	"/td order <name> <name> ... - set your team's fighter order (the leader always fights first)",
+	"Your team is your party (2 or 3 players); the party leader sends 2v2/3v3 challenges",
+	"/td order <name> <name> ... - set your party's fighter order (the leader always fights first)",
 	"/td challenge [1v1|2v2|3v3] [name] - challenge your target (or right-click them > Challenge); you must be in duel range",
 	"/td accept | decline - answer a challenge",
 	"/td duel - send the duel request to your current opponent",
-	"/td won | lost - report your duel result manually",
-	"/td abort - end the match without a result (team leaders)",
-	"/td abandon - drop a stuck match on this computer only",
 	"/td rating | history - your local ratings and recent matches",
 	"/td where | locations - your position data / candidate duel spots",
 	"/td debug | log - toggle debug output / show the last log lines",
 }
 
+local function TeamsAreParties()
+	ns.Print("Teams are your normal party now: use /invite. The party leader sends 2v2/3v3 challenges.")
+end
+
 local Commands = {
 	help = function() for _, line in ipairs(HELP) do ns.Print(line) end end,
-	invite = function(args) ns.Session.Invite(args[1]) end,
-	join = function() ns.Session.JoinTeam() end,
-	leave = function() ns.Session.LeaveTeam() end,
+	invite = TeamsAreParties,
+	join = TeamsAreParties,
+	leave = TeamsAreParties,
 	order = function(args) ns.Session.SetOrder(args) end,
 	challenge = function(args)
 		local fmt = tonumber(string.match(string.lower(args[1] or ""), "^([123])v%1$"))
@@ -96,10 +101,6 @@ local Commands = {
 	accept = function() ns.Session.Accept() end,
 	decline = function() ns.Session.Decline() end,
 	duel = function() ns.Session.StartDuel() end,
-	won = function() ns.Session.Report(true) end,
-	lost = function() ns.Session.Report(false) end,
-	abort = function() ns.Session.Abort() end,
-	abandon = function() ns.Session.Abandon() end,
 	rating = Ratings,
 	history = History,
 	where = Where,

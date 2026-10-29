@@ -45,8 +45,8 @@ read_globals = {
 	"UnitName", "UnitFullName", "UnitGUID", "UnitIsUnit", "UnitExists", "UnitIsPlayer",
 	"UnitIsConnected", "UnitIsDeadOrGhost", "UnitHealth", "UnitHealthMax", "UnitClass",
 	"UnitAffectingCombat", "InCombatLockdown", "UnitPosition", "UnitInParty", "UnitInRaid",
-	"UnitInRange", "CheckInteractDistance",
-	"IsInGroup", "IsInRaid", "GetNumGroupMembers", "GetNormalizedRealmName", "GetRealmName", "Ambiguate",
+	"UnitInRange", "CheckInteractDistance", "UnitDistanceSquared",
+	"IsInGroup", "IsInRaid", "UnitIsGroupLeader", "GetNumGroupMembers", "GetNormalizedRealmName", "GetRealmName", "Ambiguate",
 
 	-- Location
 	"GetRealZoneText", "GetSubZoneText", "GetZoneText", "GetMinimapZoneText",
@@ -58,6 +58,7 @@ read_globals = {
 	"PlaySound", "SOUNDKIT",
 	"DEFAULT_CHAT_FRAME", "UIErrorsFrame", "RaidNotice_AddMessage", "Settings",
 	"Menu", "MenuUtil", -- FrameXML right-click menus; UNVERIFIED on Forever
+	"TooltipDataProcessor", -- Retail tooltip hooks; not in the Forever dump, only used if present
 	"NORMAL_FONT_COLOR", "RED_FONT_COLOR", "GREEN_FONT_COLOR", "RAID_CLASS_COLORS", "WrapTextInColorCode",
 
 	-- Global strings (UNVERIFIED on Forever: /dump them in game)

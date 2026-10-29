@@ -16,8 +16,8 @@ end
 -- Both fighters of the current duel agree that `winner` won.
 local function settle(m, winner)
 	local duel, idx = M.CurrentDuel(m)
-	M.ReportResult(m, duel.a, idx, winner, duel.disputes)
-	return M.ReportResult(m, duel.b, idx, winner, duel.disputes)
+	M.ReportResult(m, duel.a, idx, winner, duel.attempt)
+	return M.ReportResult(m, duel.b, idx, winner, duel.attempt)
 end
 
 describe("Match", function()
@@ -27,7 +27,7 @@ describe("Match", function()
 		expect(pcall(M.New, { fmt = 1, teamA = { "A-R" }, teamB = { "B-R" }, ratingsA = { 1 }, ratingsB = { 1 }, progression = "random" })).toBeFalsy()
 	end)
 
-	it("needs both fighters to agree", function()
+	it("needs both teams to agree", function()
 		local m = new(1)
 		expect((M.ReportResult(m, "A1-R", 1, "A1-R", 0))).toBe("pending")
 		expect((M.ReportResult(m, "B1-R", 1, "A1-R", 0))).toBe("confirmed")
@@ -35,17 +35,20 @@ describe("Match", function()
 		expect(m.result).toBe("A")
 	end)
 
-	it("ignores reports from non-fighters, wrong duels and unknown winners", function()
+	it("counts teammates as witnesses, and ignores outsiders, wrong duels and unknown winners", function()
 		local m = new(2)
-		expect((M.ReportResult(m, "A2-R", 1, "A1-R", 0))).toBe("ignored") -- teammate, not fighting
+		expect((M.ReportResult(m, "X-R", 1, "A1-R", 0))).toBe("ignored")  -- not in the match
 		expect((M.ReportResult(m, "A1-R", 2, "A1-R", 0))).toBe("ignored") -- future duel
-		expect((M.ReportResult(m, "A1-R", 1, "X-R", 0))).toBe("ignored")  -- not a fighter
+		expect((M.ReportResult(m, "A1-R", 1, "X-R", 0))).toBe("ignored")  -- winner not a fighter
+		expect((M.ReportResult(m, "A2-R", 1, "B1-R", 0))).toBe("pending")  -- teammate witness
+		expect((M.ReportResult(m, "B2-R", 1, "B1-R", 0))).toBe("confirmed")
+		expect(m.duels[1].winner).toBe("B1-R")
 	end)
 
-	it("ignores a second report from the same fighter in the same attempt", function()
-		local m = new(1)
+	it("takes the first report from each team in an attempt", function()
+		local m = new(2)
 		M.ReportResult(m, "A1-R", 1, "A1-R", 0)
-		expect((M.ReportResult(m, "A1-R", 1, "B1-R", 0))).toBe("ignored")
+		expect((M.ReportResult(m, "A2-R", 1, "B1-R", 0))).toBe("ignored")
 	end)
 
 	it("re-runs a disputed duel and aborts after too many disputes", function()
@@ -110,8 +113,51 @@ describe("Match", function()
 
 	it("abort only applies to an active match", function()
 		local m = new(1)
-		expect(M.Abort(m, "leader")).toBeTruthy()
+		expect(M.Abort(m, "disputed")).toBeTruthy()
 		expect(M.Abort(m, "again")).toBeFalsy()
 		expect((M.ReportResult(m, "A1-R", 1, "A1-R", 0))).toBe("ignored")
+	end)
+
+	it("re-runs a duel with no readable result as the next attempt", function()
+		local m = new(1)
+		M.ReportResult(m, "A1-R", 1, "A1-R", 0)               -- only one team read it
+		expect((M.Rerun(m, 1, 0))).toBe("rerun")
+		expect(m.duels[1].attempt).toBe(1)
+		expect(m.duels[1].disputes).toBe(0)
+		expect((M.Rerun(m, 1, 0))).toBe("ignored")            -- that attempt is over
+		expect((M.ReportResult(m, "B1-R", 1, "A1-R", 0))).toBe("ignored")
+		expect(settle(m, "B1-R")).toBe("confirmed")
+		expect(m.result).toBe("B")
+	end)
+
+	it("a re-run picks up reports that arrived early for the next attempt", function()
+		local m = new(1)
+		M.ReportResult(m, "A1-R", 1, "B1-R", 1)
+		M.ReportResult(m, "B1-R", 1, "B1-R", 1)
+		expect((M.Rerun(m, 1, 0))).toBe("confirmed")
+	end)
+
+	it("blames the fighter who got the request and didn't accept, or both teams", function()
+		local m = new(2)
+		expect(M.StallingSide(m)).toBe("both")
+		expect(M.MarkRequested(m, 1, 0, "X-R")).toBeFalsy()   -- not a fighter
+		expect(M.MarkRequested(m, 1, 0, "B1-R")).toBeTruthy()
+		expect(M.StallingSide(m)).toBe("B")
+		M.MarkAccepted(m, 1, 0, "B1-R")
+		expect(M.StallingSide(m)).toBe(nil)
+		M.Rerun(m, 1, 0)                                      -- a new attempt needs a new request
+		expect(M.StallingSide(m)).toBe("both")
+	end)
+
+	it("a forfeit finishes the match for the other team, or for nobody", function()
+		local m = new(3)
+		settle(m, "A1-R")
+		expect(M.Forfeit(m, "A", "offline")).toBeTruthy()
+		expect(m.state).toBe("FINISHED")
+		expect(m.result).toBe("B")
+		expect(M.Forfeit(m, "B", "stall")).toBeFalsy()
+		local both = new(1)
+		M.Forfeit(both, "both", "stall")
+		expect(both.result).toBe("none")
 	end)
 end)
